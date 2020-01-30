@@ -1,15 +1,16 @@
 import discord
 from discord.ext import commands
 import datetime
+from sqlalchemy.sql import exists, and_
 
 from day_greeting import DayGreeting
+from day_greeting import NewMemberJoin
 
 day_words = {
         'morning': ['mornin', 'ohayo', '\'morn'],
         'afternoon': ['afternoon'],
         'evening': ['evenin', 'konbanwa'],
         'night': ['night', 'oyasumi'],
-        'welcome': ['welcome']
         }
 
 class Day(commands.Cog):
@@ -29,6 +30,9 @@ class Day(commands.Cog):
                                 message.guild.id,
                                 word
                                 )
+
+        if 'welcome' in message.content.lower():
+            self.add_welcome(message.author.id, message.guild.id)
 
     def add_resource(self, user_id, guild_id, resource):
         time_delta = datetime.timedelta(hours=18)
@@ -62,6 +66,62 @@ class Day(commands.Cog):
                 type = resource
                 ))
             self.client.session.commit()
+
+    def add_welcome(self, author_id, guild_id):
+        exists = self.check_welcomes_exists(author_id, guild_id)
+        start_time = self.get_welcome_start_time(exists, author_id, guild_id)
+        welcomes = self.get_welcomes(guild_id, start_time)
+        if exists:
+            query = self.client.session.query(DayGreeting) \
+                    .filter_by(
+                            discord_user_id=author_id,
+                            guild_id=guild_id,
+                            type='welcome'
+                            )
+            query.update({ 'count': DayGreeting.count+welcomes})
+            self.client.session.commit()
+        else:
+            self.client.session.add(DayGreeting(
+                count = welcomes,
+                discord_user_id = author_id,
+                guild_id = guild_id,
+                type = 'welcome'
+                ))
+            self.client.session.commit()
+
+    def check_welcomes_exists(self, author_id, guild_id):
+        return self.client.session.query(exists().where(and_(
+            DayGreeting.discord_user_id==author_id,
+            DayGreeting.guild_id==guild_id,
+            DayGreeting.type=='welcome'
+            ))).scalar() > 0
+
+    def get_welcome_start_time(self, exists, author_id, guild_id):
+        six_hours_ago = datetime.datetime.now() - datetime.timedelta(hours=6)
+        if exists:
+            return max(self.client.session.query(DayGreeting).filter_by(
+                    discord_user_id = author_id,
+                    guild_id = guild_id,
+                    type = 'welcome'
+                    ).first().latest, six_hours_ago)
+        else:
+            return six_hours_ago
+
+    def get_welcomes(self, guild_id, start_time):
+        return self.client.session.query(NewMemberJoin).filter(and_(
+                NewMemberJoin.guild_id == guild_id,
+                NewMemberJoin.date > start_time
+                )).count()
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member):
+        if member.bot:
+            return
+
+        self.client.session.add(NewMemberJoin(
+            guild_id = member.guild.id
+            ))
+        self.client.session.commit()
 
     @commands.command()
     async def things(self, ctx):

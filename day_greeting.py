@@ -17,3 +17,10 @@ class DayGreeting(Base):
             server_default = func.sysdate(),
             onupdate = func.now()
             )
+
+class NewMemberJoin(Base):
+    __tablename__ = 'new_member_joins'
+
+    id = Column(Integer, primary_key = True)
+    date = Column(TIMESTAMP, server_default = func.sysdate())
+    guild_id = Column(Integer)

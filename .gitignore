@@ -1,5 +1,10 @@
+# Vim temporary files
 *~
 *.swp
 *.swo
 
+# dotenv
 .env
+
+# Byte-compiled / optimized / dll files
+*.py[cod]
